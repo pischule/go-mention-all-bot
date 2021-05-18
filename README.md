@@ -1,4 +1,4 @@
-# mention-all-the-bot-go
+# 🦄 go-mention-bot
 
 Implementation of [mention-all-the-bot](https://github.com/pischule/mention-all-bot) in Go
 
