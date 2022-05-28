@@ -1,6 +1,6 @@
 # 🦄 go-mention-bot
 
-Implementation of [mention-all-the-bot](https://github.com/pischule/mention-all-bot) in Go
+Second version of [mention-all-the-bot](https://github.com/pischule/mention-all-bot)
 
 ## how to run this
 
