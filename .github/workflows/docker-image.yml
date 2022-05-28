@@ -23,7 +23,7 @@ jobs:
         password: ${{secrets.DOCKERHUB_PASSWORD}}
         
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag pischule/go-mention-all-bot:$(date +%s)
+      run: docker build . --file Dockerfile --tag pischule/go-mention-all-bot
       
     - name: Push the Docker image
       run: docker push pischule/go-mention-all-bot
