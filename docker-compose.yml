@@ -1,0 +1,8 @@
+services:
+  bot:
+    image: pischule/go-mention-all-bot
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    environment:
+      TELEGRAM_TOKEN: "${TELEGRAM_TOKEN}"
