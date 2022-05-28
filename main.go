@@ -5,129 +5,136 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+	"html"
 	"log"
 	"os"
+	"path"
 	"strings"
 	"time"
 
-	tb "gopkg.in/tucnak/telebot.v2"
+	tele "gopkg.in/telebot.v3"
 )
 
 type ChatUser struct {
 	ChatID   int64 `gorm:"primaryKey"`
-	UserID   int   `gorm:"primaryKey"`
+	UserID   int64 `gorm:"primaryKey"`
 	Username string
 }
 
-func main() {
-	db, err := gorm.Open(sqlite.Open("bot_db.db"), &gorm.Config{})
+var DB *gorm.DB
+
+func ConnectDB() {
+	var err error
+	DB, err = gorm.Open(sqlite.Open(path.Join("data", "db.sqlite3")), &gorm.Config{})
 	if err != nil {
 		panic("failed to connect database")
 	}
 
-	// Migrate the schema
-	err = db.AutoMigrate(&ChatUser{})
+	err = DB.AutoMigrate(&ChatUser{})
 	if err != nil {
 		panic("failed to migrate")
 	}
+}
 
-	b, err := tb.NewBot(tb.Settings{
-		Token:  os.Getenv("TOKEN"),
-		Poller: &tb.LongPoller{Timeout: 10 * time.Second},
+func InitBot() *tele.Bot {
+	b, err := tele.NewBot(tele.Settings{
+		Token:  os.Getenv("TELEGRAM_TOKEN"),
+		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
 	})
-
 	if err != nil {
-		log.Fatal(err)
-		return
+		panic(err)
+	}
+	return b
+}
+
+func main() {
+	ConnectDB()
+	b := InitBot()
+	b.Use(logger)
+	b.Handle("/start", handleStart)
+	b.Handle("/in", handleIn)
+	b.Handle("/out", handleOut)
+	b.Handle("/all", handleAll)
+	b.Handle("/stats", handleStats)
+	b.Start()
+}
+
+func logger(next tele.HandlerFunc) tele.HandlerFunc {
+	return func(c tele.Context) error {
+		log.Println("user", c.Sender().ID, "sent", c.Message().Text)
+		return next(c)
+	}
+}
+
+func handleStart(c tele.Context) error {
+	return c.Send("Hey! I can help notify everyone 📢 in the group when someone needs them. " +
+		"Everyone who wishes to receive mentions needs to /in to opt-in. " +
+		"All opted-in users can then be mentioned using /all")
+}
+
+func handleIn(c tele.Context) error {
+	username := extractUsername(c.Sender())
+	DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "chat_id"}, {Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"username"}),
+	}).Create(&ChatUser{ChatID: c.Message().Chat.ID, UserID: c.Sender().ID, Username: username})
+	return c.Send("Thanks for opting in " + username)
+}
+
+func extractUsername(m *tele.User) string {
+	if len(m.Username) > 0 {
+		return m.Username
+	}
+	if len(m.FirstName) > 0 {
+		return m.FirstName
+	}
+	return "anonymous"
+}
+
+func handleOut(c tele.Context) error {
+	DB.Where("chat_id = ? and user_id = ?", c.Chat().ID, c.Sender().ID).Delete(&ChatUser{})
+	msg := fmt.Sprintf("You've been opted out %v", extractUsername(c.Sender()))
+	return c.Send(msg)
+}
+
+func handleAll(c tele.Context) error {
+	var users []ChatUser
+	DB.Find(&users, ChatUser{ChatID: c.Chat().ID})
+
+	if len(users) == 0 {
+		return c.Send("There are no users. To opt in type /in command")
 	}
 
-	b.Handle("/start", func(m *tb.Message) {
-		_, err := b.Send(
-			m.Sender, "Hey! I can help notify everyone 📢 in the group when someone needs them.\n"+
-				"Everyone who wishes to receive mentions needs to /in to opt-in. "+
-				"All opted-in users can then be mentioned using /all",
-		)
+	var mentions []string
+	for _, chatUser := range users {
+		croppedUsername := string([]rune(chatUser.Username)[:10])
+		mentions = append(mentions, fmt.Sprintf(`<a href="tg://user?id=%v">%v</a>`,
+			chatUser.UserID, html.EscapeString(croppedUsername)))
+	}
+
+	const chunkSize = 4
+	for i := 0; i < len(mentions); i += chunkSize {
+		end := i + chunkSize
+		if end > len(mentions) {
+			end = len(mentions)
+		}
+		err := c.Send(strings.Join(mentions[i:end], " "), tele.ModeHTML)
 		if err != nil {
-			log.Println(err)
-			return
+			return err
 		}
-	})
+	}
+	return nil
+}
 
-	b.Handle("/in", func(m *tb.Message) {
-		user := m.Sender
+func handleStats(c tele.Context) error {
+	var userCount int64
+	var chatCount int64
+	var groupCount int64
 
-		username := "anonymous"
-		if len(user.Username) > 0 {
-			username = user.Username
-		} else if len(user.FirstName) > 0 {
-			username = user.FirstName
-		}
+	DB.Model(&ChatUser{}).Distinct("user_id").Count(&userCount)
+	DB.Model(&ChatUser{}).Distinct("chat_id").Count(&chatCount)
+	DB.Model(&ChatUser{}).Select("count(*)").Group("chat_id").Having("count(*) > 1").Count(&groupCount)
 
-		db.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "chat_id"}, {Name: "user_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"username"}),
-		}).Create(&ChatUser{ChatID: m.Chat.ID, UserID: user.ID, Username: username})
-
-		msg := fmt.Sprintf("Thanks for opting in %s", username)
-
-		_, err := b.Send(m.Chat, msg)
-		if err != nil {
-			log.Println("/in", err)
-			return
-		}
-	})
-
-	b.Handle("/all", func(m *tb.Message) {
-		var users []ChatUser
-		db.Find(&users, ChatUser{ChatID: m.Chat.ID})
-
-		var usersList []string
-
-		for _, chatUser := range users {
-			usersList = append(usersList, fmt.Sprintf("[yolo](tg://user?id=%v)", chatUser.UserID))
-		}
-
-		msg := strings.Join(usersList, " ")
-
-		if len(users) == 0 {
-			msg = "There are no users\\. To opt in type /in command"
-		}
-
-		_, err := b.Send(m.Chat, msg, tb.ModeMarkdownV2)
-
-		if err != nil {
-			log.Println("/all", err)
-			return
-		}
-	})
-
-	b.Handle("/out", func(m *tb.Message) {
-		db.Where("chat_id = ? and user_id = ?", m.Chat.ID, m.Sender.ID).Delete(&ChatUser{})
-
-		msg := fmt.Sprintf("You've been opted out %v", m.Sender.ID)
-
-		_, err := b.Send(m.Chat, msg)
-		if err != nil {
-			log.Println("/out", err)
-			return
-		}
-	})
-
-	b.Handle("/stats", func(m *tb.Message) {
-		var userCount int64
-		var chatCount int64
-
-		db.Model(&ChatUser{}).Distinct("user_id").Count(&userCount)
-		db.Model(&ChatUser{}).Distinct("chat_id").Count(&chatCount)
-
-		msg := fmt.Sprintf("Users: %5d\nChats: %5d", userCount, chatCount)
-
-		_, err := b.Send(m.Chat, msg)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	})
-
-	b.Start()
+	msg := fmt.Sprintf("`Users:  %6d\nChats:  %6d\nGroups: %6d`", userCount, chatCount, groupCount)
+	return c.Send(msg, tele.ModeMarkdownV2)
 }
