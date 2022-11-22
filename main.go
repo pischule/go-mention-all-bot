@@ -2,15 +2,16 @@ package main
 
 import (
 	"fmt"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"html"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	tele "gopkg.in/telebot.v3"
 )
@@ -25,14 +26,20 @@ var DB *gorm.DB
 
 func ConnectDB() {
 	var err error
-	DB, err = gorm.Open(sqlite.Open(path.Join("data", "db.sqlite3")), &gorm.Config{})
+
+	err = os.MkdirAll(filepath.Join(".", "data"), os.ModePerm)
 	if err != nil {
-		panic("failed to connect database")
+		log.Fatal(err)
+	}
+
+	DB, err = gorm.Open(sqlite.Open(filepath.Join(".", "data", "db.sqlite3")), &gorm.Config{})
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	err = DB.AutoMigrate(&ChatUser{})
 	if err != nil {
-		panic("failed to migrate")
+		log.Fatal(err)
 	}
 }
 
@@ -42,21 +49,9 @@ func InitBot() *tele.Bot {
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	return b
-}
-
-func main() {
-	ConnectDB()
-	b := InitBot()
-	b.Use(logger)
-	b.Handle("/start", handleStart)
-	b.Handle("/in", handleIn)
-	b.Handle("/out", handleOut)
-	b.Handle("/all", handleAll)
-	b.Handle("/stats", handleStats)
-	b.Start()
 }
 
 func logger(next tele.HandlerFunc) tele.HandlerFunc {
@@ -118,8 +113,8 @@ func handleAll(c tele.Context) error {
 		if end > len(mentions) {
 			end = len(mentions)
 		}
-		err := c.Send(strings.Join(mentions[i:end], " "), tele.ModeHTML)
-		if err != nil {
+
+		if err := c.Send(strings.Join(mentions[i:end], " "), tele.ModeHTML); err != nil {
 			return err
 		}
 	}
@@ -137,4 +132,16 @@ func handleStats(c tele.Context) error {
 
 	msg := fmt.Sprintf("`Users:  %6d\nChats:  %6d\nGroups: %6d`", userCount, chatCount, groupCount)
 	return c.Send(msg, tele.ModeMarkdownV2)
+}
+
+func main() {
+	ConnectDB()
+	b := InitBot()
+	b.Use(logger)
+	b.Handle("/start", handleStart)
+	b.Handle("/in", handleIn)
+	b.Handle("/out", handleOut)
+	b.Handle("/all", handleAll)
+	b.Handle("/stats", handleStats)
+	b.Start()
 }
