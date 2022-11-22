@@ -5,7 +5,15 @@ Second version of [mention-all-the-bot](https://github.com/pischule/mention-all-
 ## how to run this
 
 ```bash
-$ wget https://raw.githubusercontent.com/pischule/go-mention-all-bot/master/docker-compose.yml
-$ echo "TELEGRAM_TOKEN=<your-telegram-token>" >> .env
-$ docker-compose up
+$ echo 'version: "2.0"
+services:
+  bot:
+    image: pischule/go-mention-all-bot
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    environment:
+      TELEGRAM_TOKEN: "${TELEGRAM_TOKEN}"' > docker-compose.yml
+$ echo 'TELEGRAM_TOKEN=<place-your-bot-token-here>' > .env
+$ docker compose up -d
 ```
