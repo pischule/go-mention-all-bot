@@ -5,7 +5,7 @@ Second version of [mention-all-the-bot](https://github.com/pischule/mention-all-
 ## how to run this
 
 ```shell
-$ cat > docker-compose.yml << EOL
+$ cat << EOF > docker-compose.yml 
 services:
   bot:
     image: ghcr.io/pischule/go-mention-all-bot:master
@@ -14,6 +14,6 @@ services:
       - ./data:/app/data
     environment:
       TELEGRAM_TOKEN: "<your-bot-token>"
-EOL
+EOF
 $ docker compose up -d
 ```
