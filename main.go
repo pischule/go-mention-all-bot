@@ -135,7 +135,7 @@ func handleStats(c tele.Context) error {
 }
 
 func handleUserLeft(c tele.Context) error {
-	u := ChatUser{UserID: c.Callback().Message.UserLeft.ID, ChatID: c.Chat().ID}
+	u := ChatUser{UserID: c.Message().UserLeft.ID, ChatID: c.Chat().ID}
 	log.Printf("user %d left chat %d", u.UserID, u.ChatID)
 	DB.Where(&u).Delete(&ChatUser{})
 	return nil
