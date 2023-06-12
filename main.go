@@ -134,6 +134,13 @@ func handleStats(c tele.Context) error {
 	return c.Send(msg, tele.ModeMarkdownV2)
 }
 
+func handleUserLeft(c tele.Context) error {
+	u := ChatUser{UserID: c.Callback().Message.UserLeft.ID, ChatID: c.Chat().ID}
+	log.Printf("user %d left chat %d", u.UserID, u.ChatID)
+	DB.Where(&u).Delete(&ChatUser{})
+	return nil
+}
+
 func main() {
 	ConnectDB()
 	b := InitBot()
@@ -143,5 +150,6 @@ func main() {
 	b.Handle("/out", handleOut)
 	b.Handle("/all", handleAll)
 	b.Handle("/stats", handleStats)
+	b.Handle(tele.OnUserLeft, handleUserLeft)
 	b.Start()
 }
