@@ -155,6 +155,32 @@ func handleUserJoined(c tele.Context) error {
 	return nil
 }
 
+func handleCleanup(c tele.Context) error {
+	log.Printf("started cleanup in chat %d", c.Chat().ID)
+	users := make([]ChatUser, 0)
+	deletedCount := 0
+	DB.Where("chat_id = ?", c.Chat().ID).Find(&users)
+	c.Send("Started unsubscribing members who left the chat 🧹")
+	for i, u := range users {
+		time.Sleep(1 * time.Second)
+		member, err := c.Bot().ChatMemberOf(c.Chat(), &tele.User{ID: u.UserID})
+		if err != nil {
+			if i == 0 {
+				return c.Send("This command works only if the bot has admin privileges")
+			} else {
+				continue
+			}
+		}
+
+		if member.Role == tele.Kicked || member.Role == tele.Left {
+			DB.Where(&u).Delete(&ChatUser{})
+			deletedCount++
+			log.Printf("user %d is no longer member of chat %d", u.UserID, u.ChatID)
+		}
+	}
+	return c.Send(fmt.Sprintf("Unsubscribed %d users", deletedCount))
+}
+
 func main() {
 	ConnectDB()
 	b := InitBot()
@@ -164,6 +190,7 @@ func main() {
 	b.Handle("/out", handleOut)
 	b.Handle("/all", handleAll)
 	b.Handle("/stats", handleStats)
+	b.Handle("/cleanup", handleCleanup)
 	b.Handle(tele.OnUserLeft, handleUserLeft)
 	b.Handle(tele.OnUserJoined, handleUserJoined)
 	b.Start()
