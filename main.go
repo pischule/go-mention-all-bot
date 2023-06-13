@@ -135,9 +135,23 @@ func handleStats(c tele.Context) error {
 }
 
 func handleUserLeft(c tele.Context) error {
-	u := ChatUser{UserID: c.Message().UserLeft.ID, ChatID: c.Chat().ID}
-	log.Printf("user %d left chat %d", u.UserID, u.ChatID)
-	DB.Where(&u).Delete(&ChatUser{})
+	cu := ChatUser{UserID: c.Message().UserLeft.ID, ChatID: c.Chat().ID}
+	log.Printf("user %d left chat %d", cu.UserID, cu.ChatID)
+	DB.Where(&cu).Delete(&ChatUser{})
+	return nil
+}
+
+func handleUserJoined(c tele.Context) error {
+	u := c.Message().UserJoined
+	if u.IsBot {
+		return nil
+	}
+	cu := ChatUser{UserID: u.ID, ChatID: c.Chat().ID, Username: extractUsername(u)}
+	log.Printf("user %d joined chat %d", cu.UserID, cu.ChatID)
+	DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "chat_id"}, {Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"username"}),
+	}).Create(&cu)
 	return nil
 }
 
@@ -151,5 +165,6 @@ func main() {
 	b.Handle("/all", handleAll)
 	b.Handle("/stats", handleStats)
 	b.Handle(tele.OnUserLeft, handleUserLeft)
+	b.Handle(tele.OnUserJoined, handleUserJoined)
 	b.Start()
 }
