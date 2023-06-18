@@ -1,4 +1,4 @@
-# 🦄 go-mention-bot
+# go-mention-bot
 
 Telegram bot that helps to mention all users in a group. 
 Second version of [mention-all-the-bot](https://github.com/pischule/mention-all-bot)
