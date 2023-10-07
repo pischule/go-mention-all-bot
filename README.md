@@ -27,7 +27,7 @@ Commands:
 ## How to run this
 
 ```shell
-$ cat << EOF > docker-compose.yml 
+$ cat << EOF > compose.yml 
 services:
   bot:
     image: ghcr.io/pischule/go-mention-all-bot:master
