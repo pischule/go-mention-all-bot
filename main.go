@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,12 @@ type ChatUser struct {
 	ChatID   int64 `gorm:"primaryKey"`
 	UserID   int64 `gorm:"primaryKey"`
 	Username string
+}
+
+type SentMessage struct {
+	gorm.Model
+	MessageId int
+	ChatID    int64
 }
 
 var DB *gorm.DB
@@ -38,6 +45,11 @@ func ConnectDB() {
 	}
 
 	err = DB.AutoMigrate(&ChatUser{})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = DB.AutoMigrate(&SentMessage{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -114,11 +126,38 @@ func handleAll(c tele.Context) error {
 			end = len(mentions)
 		}
 
-		if err := c.Send(strings.Join(mentions[i:end], " "), tele.ModeHTML); err != nil {
+		msg, err := c.Bot().Send(c.Recipient(), strings.Join(mentions[i:end], " "), tele.ModeHTML)
+		if err != nil {
 			return err
 		}
+		DB.Create(&SentMessage{
+			MessageId: msg.ID,
+			ChatID:    msg.Chat.ID,
+		})
 	}
 	return nil
+}
+
+func deleteOldSentMessages(b *tele.Bot) {
+	for range time.Tick(time.Second * 10) {
+		deleteBefore := time.Now().Add(-7 * 24 * time.Hour)
+		var msg SentMessage
+		result := DB.Where("created_at < ?", deleteBefore).Limit(1).Find(&msg)
+		if result.RowsAffected != 1 {
+			continue
+		}
+
+		err := b.Delete(tele.StoredMessage{
+			MessageID: strconv.Itoa(msg.MessageId),
+			ChatID:    msg.ChatID,
+		})
+		if err == nil {
+			log.Printf("deleted message %v from chat %v", msg.MessageId, msg.ChatID)
+		} else {
+			log.Printf("failed to delete message %v from chat %v", msg.MessageId, msg.ChatID)
+		}
+		DB.Delete(&msg)
+	}
 }
 
 func handleStats(c tele.Context) error {
@@ -193,5 +232,6 @@ func main() {
 	b.Handle("/cleanup", handleCleanup)
 	b.Handle(tele.OnUserLeft, handleUserLeft)
 	b.Handle(tele.OnUserJoined, handleUserJoined)
+	go deleteOldSentMessages(b)
 	b.Start()
 }
