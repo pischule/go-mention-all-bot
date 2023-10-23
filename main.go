@@ -140,7 +140,7 @@ func handleAll(c tele.Context) error {
 
 func deleteOldSentMessages(b *tele.Bot) {
 	for range time.Tick(time.Second * 10) {
-		deleteBefore := time.Now().Add(-7 * 24 * time.Hour)
+		deleteBefore := time.Now().Add(-47 * time.Hour)
 		var msg SentMessage
 		result := DB.Where("created_at < ?", deleteBefore).Limit(1).Find(&msg)
 		if result.RowsAffected != 1 {
@@ -154,7 +154,7 @@ func deleteOldSentMessages(b *tele.Bot) {
 		if err == nil {
 			log.Printf("deleted message %v from chat %v", msg.MessageId, msg.ChatID)
 		} else {
-			log.Printf("failed to delete message %v from chat %v", msg.MessageId, msg.ChatID)
+			log.Printf("failed to delete message %v from chat %v: %s", msg.MessageId, msg.ChatID, err)
 		}
 		DB.Delete(&msg)
 	}
@@ -199,7 +199,7 @@ func handleCleanup(c tele.Context) error {
 	users := make([]ChatUser, 0)
 	deletedCount := 0
 	DB.Where("chat_id = ?", c.Chat().ID).Find(&users)
-	c.Send("Started unsubscribing members who left the chat 🧹")
+	_ = c.Send("Started unsubscribing members who left the chat 🧹")
 	for i, u := range users {
 		time.Sleep(1 * time.Second)
 		member, err := c.Bot().ChatMemberOf(c.Chat(), &tele.User{ID: u.UserID})
