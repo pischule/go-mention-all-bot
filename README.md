@@ -39,3 +39,19 @@ services:
 EOF
 $ docker compose up -d
 ```
+
+### Proxy support
+
+If you need to route Telegram API traffic through a proxy, set the `HTTPS_PROXY` (or `HTTP_PROXY`) environment variable:
+
+```shell
+HTTPS_PROXY=http://proxy.example.com:8080 ./mention-all-bot
+```
+
+In Docker Compose:
+
+```yaml
+environment:
+  TELEGRAM_TOKEN: "<your-bot-token>"
+  HTTPS_PROXY: "http://proxy.example.com:8080"
+```

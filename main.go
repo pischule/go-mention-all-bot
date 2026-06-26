@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"html"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -56,9 +58,27 @@ func ConnectDB() {
 }
 
 func InitBot() *tele.Bot {
+	client := &http.Client{Timeout: time.Minute}
+
+	proxyURL := os.Getenv("HTTPS_PROXY")
+	if proxyURL == "" {
+		proxyURL = os.Getenv("HTTP_PROXY")
+	}
+	if proxyURL != "" {
+		proxy, err := url.Parse(proxyURL)
+		if err != nil {
+			log.Fatalf("failed to parse proxy URL: %v", err)
+		}
+		client.Transport = &http.Transport{
+			Proxy: http.ProxyURL(proxy),
+		}
+		log.Println("using proxy:", proxyURL)
+	}
+
 	b, err := tele.NewBot(tele.Settings{
 		Token:  os.Getenv("TELEGRAM_TOKEN"),
 		Poller: &tele.LongPoller{Timeout: 10 * time.Second},
+		Client: client,
 	})
 	if err != nil {
 		log.Fatal(err)
