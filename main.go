@@ -224,16 +224,55 @@ func statsRecent(c tele.Context) error {
 		Users  int64
 		Chats  int64
 		Groups int64
+		B0     int64
+		B1     int64
+		B5     int64
+		B10    int64
+		B25    int64
+		B50    int64
+		B100   int64
+		B250   int64
+		B500   int64
+		BMore  int64
 	}
 
 	var result Result
 	DB.Raw(`SELECT
 		COALESCE(SUM(users_count), 0) AS users,
 		COUNT(*) AS chats,
-		COALESCE(SUM(CASE WHEN users_count > 1 THEN 1 ELSE 0 END), 0) AS groups
+		COALESCE(SUM(CASE WHEN users_count > 1 THEN 1 ELSE 0 END), 0) AS groups,
+		COALESCE(SUM(CASE WHEN users_count = 0 THEN 1 ELSE 0 END), 0) AS b0,
+		COALESCE(SUM(CASE WHEN users_count = 1 THEN 1 ELSE 0 END), 0) AS b1,
+		COALESCE(SUM(CASE WHEN users_count BETWEEN 2 AND 5 THEN 1 ELSE 0 END), 0) AS b5,
+		COALESCE(SUM(CASE WHEN users_count BETWEEN 6 AND 10 THEN 1 ELSE 0 END), 0) AS b10,
+		COALESCE(SUM(CASE WHEN users_count BETWEEN 11 AND 25 THEN 1 ELSE 0 END), 0) AS b25,
+		COALESCE(SUM(CASE WHEN users_count BETWEEN 26 AND 50 THEN 1 ELSE 0 END), 0) AS b50,
+		COALESCE(SUM(CASE WHEN users_count BETWEEN 51 AND 100 THEN 1 ELSE 0 END), 0) AS b100,
+		COALESCE(SUM(CASE WHEN users_count BETWEEN 101 AND 250 THEN 1 ELSE 0 END), 0) AS b250,
+		COALESCE(SUM(CASE WHEN users_count BETWEEN 251 AND 500 THEN 1 ELSE 0 END), 0) AS b500,
+		COALESCE(SUM(CASE WHEN users_count > 500 THEN 1 ELSE 0 END), 0) AS bmore
 	FROM chat_stats`).Scan(&result)
 
-	msg := fmt.Sprintf("`Users:  %6d\nChats:  %6d\nGroups: %6d`", result.Users, result.Chats, result.Groups)
+	msg := fmt.Sprintf("```\n"+
+		"Users: %d\n"+
+		"Chats: %d\n"+
+		"Groups: %d\n\n"+
+		"Groups by size:\n"+
+		"0:       %d\n"+
+		"1:       %d\n"+
+		"2-5:     %d\n"+
+		"6-10: 	  %d\n"+
+		"11-25:   %d\n"+
+		"26-50:   %d\n"+
+		"51-100:  %d\n"+
+		"101-250: %d\n"+
+		"251-500: %d\n"+
+		"500+: 	  %d\n"+
+		"```",
+		result.Users, result.Chats, result.Groups,
+		result.B0, result.B1, result.B5, result.B10, result.B25, result.B50,
+		result.B100, result.B250, result.B500, result.BMore,
+	)
 	return c.Send(msg, tele.ModeMarkdownV2)
 }
 
