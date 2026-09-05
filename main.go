@@ -31,6 +31,12 @@ type SentMessage struct {
 	ChatID    int64
 }
 
+type ChatStats struct {
+	ChatID       int64 `gorm:"primaryKey"`
+	LastActiveAt time.Time
+	UsersCount   int64
+}
+
 var DB *gorm.DB
 
 func ConnectDB() {
@@ -52,6 +58,11 @@ func ConnectDB() {
 	}
 
 	err = DB.AutoMigrate(&SentMessage{})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = DB.AutoMigrate(&ChatStats{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -93,13 +104,22 @@ func logger(next tele.HandlerFunc) tele.HandlerFunc {
 	}
 }
 
+func touchChatStats(c tele.Context) {
+	DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "chat_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"last_active_at"}),
+	}).Create(&ChatStats{ChatID: c.Chat().ID, LastActiveAt: time.Now()})
+}
+
 func handleStart(c tele.Context) error {
+	touchChatStats(c)
 	return c.Send("Hey! I can help notify everyone 📢 in the group when someone needs them. " +
 		"Everyone who wishes to receive mentions needs to /in to opt-in. " +
 		"All opted-in users can then be mentioned using /all")
 }
 
 func handleIn(c tele.Context) error {
+	touchChatStats(c)
 	username := extractUsername(c.Sender())
 	DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "chat_id"}, {Name: "user_id"}},
@@ -119,6 +139,7 @@ func extractUsername(m *tele.User) string {
 }
 
 func handleOut(c tele.Context) error {
+	touchChatStats(c)
 	DB.Where("chat_id = ? and user_id = ?", c.Chat().ID, c.Sender().ID).Delete(&ChatUser{})
 	msg := fmt.Sprintf("You've been opted out %v", extractUsername(c.Sender()))
 	return c.Send(msg)
@@ -127,6 +148,11 @@ func handleOut(c tele.Context) error {
 func handleAll(c tele.Context) error {
 	var users []ChatUser
 	DB.Find(&users, ChatUser{ChatID: c.Chat().ID})
+
+	DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "chat_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"users_count", "last_active_at"}),
+	}).Create(&ChatStats{ChatID: c.Chat().ID, LastActiveAt: time.Now(), UsersCount: int64(len(users))})
 
 	if len(users) == 0 {
 		return c.Send("There are no users. To opt in type /in command")
@@ -193,6 +219,24 @@ func handleStats(c tele.Context) error {
 	return c.Send(msg, tele.ModeMarkdownV2)
 }
 
+func statsRecent(c tele.Context) error {
+	type Result struct {
+		Users  int64
+		Chats  int64
+		Groups int64
+	}
+
+	var result Result
+	DB.Raw(`SELECT
+		COALESCE(SUM(users_count), 0) AS users,
+		COUNT(*) AS chats,
+		COALESCE(SUM(CASE WHEN users_count > 1 THEN 1 ELSE 0 END), 0) AS groups
+	FROM chat_stats`).Scan(&result)
+
+	msg := fmt.Sprintf("`Users:  %6d\nChats:  %6d\nGroups: %6d`", result.Users, result.Chats, result.Groups)
+	return c.Send(msg, tele.ModeMarkdownV2)
+}
+
 func handleUserLeft(c tele.Context) error {
 	cu := ChatUser{UserID: c.Message().UserLeft.ID, ChatID: c.Chat().ID}
 	log.Printf("user %d left chat %d", cu.UserID, cu.ChatID)
@@ -249,6 +293,7 @@ func main() {
 	b.Handle("/out", handleOut)
 	b.Handle("/all", handleAll)
 	b.Handle("/stats", handleStats)
+	b.Handle("/stats_recent", statsRecent)
 	b.Handle("/cleanup", handleCleanup)
 	b.Handle(tele.OnUserLeft, handleUserLeft)
 	b.Handle(tele.OnUserJoined, handleUserJoined)
